@@ -570,6 +570,13 @@ export function computeStats(
   const spendTotal = totalSpend > 0 ? [{ plattform: "Gesamt", spend: totalSpend }] : [];
   const spendTotalAll = totalSpend;
 
+  // Fallback: Für die "gesamt"-View, wenn Leads 26 Tab keine Sales/Umsatz-Werte hat
+  // (weil Alice pflegt close/umsatz pro Lead noch nicht), nimm die aggregierten Werte
+  // aus KW Performance 26 damit Cards und ROAS konsistent sind.
+  const effectiveSales = view === "gesamt" && salesCount === 0 && totalDailySales > 0 ? totalDailySales : salesCount;
+  const effectiveUmsatz = view === "gesamt" && umsatz === 0 && totalDailyUmsatz > 0 ? totalDailyUmsatz : umsatz;
+  const effectiveLeads = view === "gesamt" && totalDailyLeads > totalLeads ? totalDailyLeads : totalLeads;
+
   // Forecast (only for "dieser-monat")
   let forecast: Forecast | null = null;
   const now = new Date();
@@ -584,30 +591,30 @@ export function computeStats(
     forecast = {
       daysInMonth,
       daysElapsed,
-      leadsSoFar: totalLeads,
-      salesSoFar: salesCount,
-      umsatzSoFar: umsatz,
-      leadsProjected: Math.round(totalLeads * factor),
-      salesProjected: Math.round(salesCount * factor),
-      umsatzProjected: Math.round(umsatz * factor),
+      leadsSoFar: effectiveLeads,
+      salesSoFar: effectiveSales,
+      umsatzSoFar: effectiveUmsatz,
+      leadsProjected: Math.round(effectiveLeads * factor),
+      salesProjected: Math.round(effectiveSales * factor),
+      umsatzProjected: Math.round(effectiveUmsatz * factor),
     };
   }
 
   return {
-    totalLeads,
-    salesCount,
-    salesQuote: totalLeads > 0 ? salesCount / totalLeads : 0,
-    umsatz,
+    totalLeads: effectiveLeads,
+    salesCount: effectiveSales,
+    salesQuote: effectiveLeads > 0 ? effectiveSales / effectiveLeads : 0,
+    umsatz: effectiveUmsatz,
     bySource,
     weeklyTrend,
     delta: {
-      leads: pctDelta(totalLeads, prev.total),
-      sales: pctDelta(salesCount, prev.sales),
+      leads: pctDelta(effectiveLeads, prev.total),
+      sales: pctDelta(effectiveSales, prev.sales),
       salesQuote: pctDelta(
-        totalLeads ? salesCount / totalLeads : 0,
+        effectiveLeads ? effectiveSales / effectiveLeads : 0,
         prev.total ? prev.sales / prev.total : 0
       ),
-      umsatz: pctDelta(umsatz, prev.umsatz),
+      umsatz: pctDelta(effectiveUmsatz, prev.umsatz),
     },
     topCampaigns,
     topAdSets,
