@@ -445,13 +445,29 @@ export function computeStats(
 
   const todayEnd = new Date();
   todayEnd.setHours(23, 59, 59, 999);
-  const dailyInRange = dailyEffective.filter(
-    (d) => d.datum >= current.start && d.datum < current.end && d.datum <= todayEnd
-  );
-  const totalSpend = dailyInRange.reduce((s, d) => s + d.adspend, 0);
-  const totalDailyLeads = dailyInRange.reduce((s, d) => s + d.leads, 0);
-  const totalDailySales = dailyInRange.reduce((s, d) => s + d.sales, 0);
-  const totalDailyUmsatz = dailyInRange.reduce((s, d) => s + d.umsatz, 0);
+
+  // Proportionale KW-zu-Range-Aufteilung: Jede KW spannt 7 Tage vom Montag an.
+  // Wenn Range nur einen Teil der KW abdeckt, wird der Anteil (0..1) berechnet.
+  // Beispiel: KW 27 (Mo 29.06.–So 05.07.) im "Juli"-Range: 5/7 der Werte fließen ein.
+  const WEEK_MS = 7 * 86400000;
+  const rangeStart = current.start.getTime();
+  const rangeEnd = Math.min(current.end.getTime(), todayEnd.getTime() + 1);
+  function overlapFraction(kwMonday: Date): number {
+    const kwStart = kwMonday.getTime();
+    const kwEnd = kwStart + WEEK_MS;
+    const overlapStart = Math.max(kwStart, rangeStart);
+    const overlapEnd = Math.min(kwEnd, rangeEnd);
+    if (overlapEnd <= overlapStart) return 0;
+    return (overlapEnd - overlapStart) / WEEK_MS;
+  }
+
+  const dailyInRange = dailyEffective
+    .map((d) => ({ ...d, _frac: overlapFraction(d.datum) }))
+    .filter((d) => d._frac > 0);
+  const totalSpend = dailyInRange.reduce((s, d) => s + d.adspend * d._frac, 0);
+  const totalDailyLeads = dailyInRange.reduce((s, d) => s + d.leads * d._frac, 0);
+  const totalDailySales = dailyInRange.reduce((s, d) => s + d.sales * d._frac, 0);
+  const totalDailyUmsatz = dailyInRange.reduce((s, d) => s + d.umsatz * d._frac, 0);
 
   const bySource: SourceBreakdown[] = Array.from(sourceMap.entries())
     .map(([name, v]) => ({
@@ -573,9 +589,15 @@ export function computeStats(
   // Fallback: Für die "gesamt"-View, wenn Leads 26 Tab keine Sales/Umsatz-Werte hat
   // (weil Alice pflegt close/umsatz pro Lead noch nicht), nimm die aggregierten Werte
   // aus KW Performance 26 damit Cards und ROAS konsistent sind.
-  const effectiveSales = view === "gesamt" && salesCount === 0 && totalDailySales > 0 ? totalDailySales : salesCount;
-  const effectiveUmsatz = view === "gesamt" && umsatz === 0 && totalDailyUmsatz > 0 ? totalDailyUmsatz : umsatz;
-  const effectiveLeads = view === "gesamt" && totalDailyLeads > totalLeads ? totalDailyLeads : totalLeads;
+  // Rundung, damit anteilig aufgeteilte Grenz-KWs (z.B. 5.71 Sales) sauber als Integer erscheinen.
+  const effectiveSales = Math.round(
+    view === "gesamt" && salesCount === 0 && totalDailySales > 0 ? totalDailySales : salesCount
+  );
+  const effectiveUmsatz =
+    view === "gesamt" && umsatz === 0 && totalDailyUmsatz > 0 ? totalDailyUmsatz : umsatz;
+  const effectiveLeads = Math.round(
+    view === "gesamt" && totalDailyLeads > totalLeads ? totalDailyLeads : totalLeads
+  );
 
   // Forecast (only for "dieser-monat")
   let forecast: Forecast | null = null;
