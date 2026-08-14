@@ -770,7 +770,7 @@ export default function Dashboard() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs text-zinc-700 uppercase border-b border-zinc-200">
+                <tr className="text-left text-xs font-semibold text-zinc-900 uppercase border-b border-zinc-300">
                   <th className="py-2 pr-3">Quelle</th>
                   <th className="py-2 px-3 text-right">Leads</th>
                   <th className="py-2 px-3 text-right">Sales</th>
@@ -786,14 +786,14 @@ export default function Dashboard() {
                         className="w-2.5 h-2.5 rounded-full"
                         style={{ background: s.color }}
                       />
-                      <span className="font-medium">{s.name}</span>
+                      <span className="font-semibold text-zinc-900">{s.name}</span>
                     </td>
-                    <td className="py-2.5 px-3 text-right tabular-nums">{s.leads}</td>
-                    <td className="py-2.5 px-3 text-right tabular-nums">{s.sales}</td>
-                    <td className="py-2.5 px-3 text-right tabular-nums">
+                    <td className="py-2.5 px-3 text-right tabular-nums text-zinc-900">{s.leads}</td>
+                    <td className="py-2.5 px-3 text-right tabular-nums text-zinc-900">{s.sales}</td>
+                    <td className="py-2.5 px-3 text-right tabular-nums text-zinc-900">
                       {formatPct(s.leads ? s.sales / s.leads : 0)}
                     </td>
-                    <td className="py-2.5 pl-3 text-right tabular-nums">{formatEur(s.umsatz)}</td>
+                    <td className="py-2.5 pl-3 text-right tabular-nums font-medium text-zinc-900">{formatEur(s.umsatz)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -807,7 +807,7 @@ export default function Dashboard() {
             <Megaphone size={18} className="text-zinc-900" />
             <h2 className="text-base font-bold text-zinc-900">TOP Kampagne</h2>
           </div>
-          <p className="text-sm text-zinc-700 mb-4">Sortiert nach Lead-Volumen · Top 8</p>
+          <p className="text-sm text-zinc-700 mb-4">Sortiert nach Umsatz · Top 8</p>
           {topCampaigns.length === 0 ? (
             <p className="text-sm text-zinc-700">Keine Kampagnen-Daten im Zeitraum</p>
           ) : (

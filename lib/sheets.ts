@@ -427,8 +427,8 @@ export function computeStats(
   view: ViewFilter = "gesamt"
 ): DashboardStats {
   const leads = applyViewFilter(allLeads, view);
-  // For sub-views, daily-perf totals do not apply (aggregate over all sources)
-  const dailyEffective = view === "gesamt" ? daily : [];
+  const allInRange = aggregateBasics(allLeads, current.start, current.end);
+  const dailyEffective = daily;
   const { inRange, sales: salesCount, total: totalLeads, umsatz } = aggregateBasics(leads, current.start, current.end);
   const prev = aggregateBasics(leads, previous.start, previous.end);
 
@@ -488,7 +488,7 @@ export function computeStats(
   }
   const topCampaigns: CampaignBreakdown[] = Array.from(campMap.entries())
     .map(([name, v]) => ({ name, ...v, salesQuote: v.leads ? v.sales / v.leads : 0 }))
-    .sort((a, b) => b.leads - a.leads)
+    .sort((a, b) => b.umsatz - a.umsatz || b.leads - a.leads)
     .slice(0, 8);
 
   // Ad Set breakdown (Anzeigengruppe)
@@ -504,16 +504,17 @@ export function computeStats(
   }
   const topAdSets: AdSetBreakdown[] = Array.from(adSetMap.entries())
     .map(([name, v]) => ({ name, ...v, salesQuote: v.leads ? v.sales / v.leads : 0 }))
-    .sort((a, b) => b.leads - a.leads)
+    .sort((a, b) => b.umsatz - a.umsatz || b.leads - a.leads)
     .slice(0, 8);
 
   // Ad (Werbeanzeige) breakdown
   const adMap = new Map<string, { adName: string; adSet: string; leads: number; sales: number; umsatz: number }>();
   for (const l of inRange) {
-    if (!l.adName) continue;
-    const key = `${l.adSet}||${l.adName}`;
+    if (!l.adName && !l.adSet) continue;
+    const effectiveAdName = l.adName || "(ohne Anzeigenname)";
+    const key = `${l.adSet}||${effectiveAdName}`;
     const cur = adMap.get(key) || {
-      adName: l.adName,
+      adName: effectiveAdName,
       adSet: l.adSet || "—",
       leads: 0,
       sales: 0,
@@ -525,7 +526,7 @@ export function computeStats(
     adMap.set(key, cur);
   }
   const topAds: AdBreakdown[] = Array.from(adMap.values())
-    .sort((a, b) => b.leads - a.leads)
+    .sort((a, b) => b.umsatz - a.umsatz || b.leads - a.leads)
     .slice(0, 10);
 
   // Weekday
@@ -586,17 +587,16 @@ export function computeStats(
   const spendTotal = totalSpend > 0 ? [{ plattform: "Gesamt", spend: totalSpend }] : [];
   const spendTotalAll = totalSpend;
 
-  // Fallback: Für die "gesamt"-View, wenn Leads 26 Tab keine Sales/Umsatz-Werte hat
-  // (weil Alice pflegt close/umsatz pro Lead noch nicht), nimm die aggregierten Werte
-  // aus KW Performance 26 damit Cards und ROAS konsistent sind.
-  // Rundung, damit anteilig aufgeteilte Grenz-KWs (z.B. 5.71 Sales) sauber als Integer erscheinen.
+  // Fallback: Wenn Leads 26 keine Sales/Umsatz hat, KW Performance-Werte nutzen.
+  // Für Sub-Views proportional zum Lead-Anteil aufteilen.
+  const viewRatio = view === "gesamt" ? 1 : (allInRange.total > 0 ? totalLeads / allInRange.total : 0);
   const effectiveSales = Math.round(
-    view === "gesamt" && salesCount === 0 && totalDailySales > 0 ? totalDailySales : salesCount
+    salesCount === 0 && totalDailySales > 0 ? totalDailySales * viewRatio : salesCount
   );
   const effectiveUmsatz =
-    view === "gesamt" && umsatz === 0 && totalDailyUmsatz > 0 ? totalDailyUmsatz : umsatz;
+    umsatz === 0 && totalDailyUmsatz > 0 ? totalDailyUmsatz * viewRatio : umsatz;
   const effectiveLeads = Math.round(
-    view === "gesamt" && totalDailyLeads > totalLeads ? totalDailyLeads : totalLeads
+    totalDailyLeads * viewRatio > totalLeads ? totalDailyLeads * viewRatio : totalLeads
   );
 
   // Forecast (only for "dieser-monat")
