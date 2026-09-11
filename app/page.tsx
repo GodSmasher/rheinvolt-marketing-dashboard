@@ -23,11 +23,24 @@ type Project = {
   customer: string;
 };
 
+type FunnelGroup = {
+  key: string;
+  label: string;
+  names: string[];
+  color: string;
+  kind: "Termin" | "Angebot" | "Nachfassen" | "Auftrag" | "Absage" | "Sonstige";
+};
+
 type ApiData = {
+  client: { slug: string; label: string };
+  clients: { slug: string; label: string }[];
+  funnelGroups: FunnelGroup[];
   projects: Project[];
   users: { id: string; name: string; email: string }[];
   leadSources: string[];
   boards: any[];
+  tasksByUser: Record<string, { total: number; open: number; done: number }>;
+  tasksTotal: number;
   generatedAt: string;
 };
 
@@ -37,20 +50,11 @@ type Region = "alle" | "Nord" | "Mitte" | "Süd";
 const REGION_COLORS: Record<string, string> = { Nord: "#3b82f6", Mitte: "#10b981", "Süd": "#f59e0b", Unbekannt: "#9ca3af" };
 const PRODUCT_COLORS: Record<string, string> = { WP: "#ef4444", PV: "#eab308", Sonstige: "#6b7280" };
 
-// Funnel-Column-Gruppen für HomeServe Vertriebsprozess
-const FUNNEL_GROUPS = [
-  { key: "SC1", names: ["Terminiert SC1"], color: "#93c5fd" },
-  { key: "Vid", names: ["Terminiert Vid"], color: "#60a5fa" },
-  { key: "Angebot", names: ["Angebotserstellung", "Rücksprache mit Projektleiter"], color: "#3b82f6" },
-  { key: "SC2", names: ["Angebotsbesprechung SC2 beim Kunden", "Angebotsbesprechung SC2  im Haus"], color: "#1d4ed8" },
-  { key: "Nachfassen", names: ["Nachfassen"], color: "#f59e0b" },
-  { key: "Auftrag", names: ["Auftrag versendet", "Beauftragt", "AB verschickt", "BzA verschickt"], color: "#10b981" },
-  { key: "Absage", names: ["Absage"], color: "#dc2626" },
-];
-
-function groupFor(col: string): string {
-  for (const g of FUNNEL_GROUPS) if (g.names.includes(col)) return g.key;
-  return "Sonstige";
+// FUNNEL_GROUPS wird jetzt pro-Client aus der API geliefert (lib/clients.ts).
+function makeGroupFor(groups: FunnelGroup[]) {
+  const byCol: Record<string, FunnelGroup> = {};
+  for (const g of groups) for (const n of g.names) byCol[n] = g;
+  return (col: string): FunnelGroup | undefined => byCol[col];
 }
 
 function daysBetween(a?: string, b?: string): number | null {
@@ -70,19 +74,26 @@ export default function Dashboard() {
   const [region, setRegion] = useState<Region>("alle");
   const [vertriebler, setVertriebler] = useState<string>("alle");
   const [produkt, setProdukt] = useState<string>("alle");
+  const [client, setClient] = useState<string>("homeserve");
+  const [drilldown, setDrilldown] = useState<{ title: string; projects: Project[] } | null>(null);
 
-  const load = () => {
+  const load = (slug: string = client) => {
     setLoading(true);
-    fetch("/api/reonic")
+    setErr(null);
+    fetch(`/api/reonic?client=${encodeURIComponent(slug)}`)
       .then((r) => r.json())
       .then((d) => {
         if (d.error) setErr(d.error);
-        else setData(d);
+        else {
+          setData(d);
+          // Filter zurücksetzen, weil Vertriebler-Optionen kundenabhängig sind
+          setVertriebler("alle");
+        }
       })
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false));
   };
-  useEffect(load, []);
+  useEffect(() => { load(client); }, [client]);
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -94,29 +105,35 @@ export default function Dashboard() {
     );
   }, [data, region, vertriebler, produkt]);
 
+  const groupFor = useMemo(() => makeGroupFor(data?.funnelGroups || []), [data]);
+  const funnelGroups = data?.funnelGroups || [];
+
   const kpis = useMemo(() => {
-    // Abschluss = Column-Gruppe "Auftrag" ODER Stage=Installation ODER deal.state=Won
-    const isAbschluss = (p: Project) => p.dealState === "Won" || p.stage === "installation" || groupFor(p.columnName) === "Auftrag";
-    const isAbsage = (p: Project) => p.dealState === "Lost" || groupFor(p.columnName) === "Absage";
+    const isAbschluss = (p: Project) => p.dealState === "Won" || p.stage === "installation" || groupFor(p.columnName)?.kind === "Auftrag";
+    const isAbsage = (p: Project) => p.dealState === "Lost" || groupFor(p.columnName)?.kind === "Absage";
     const won = filtered.filter(isAbschluss);
     const lost = filtered.filter(isAbsage);
     const open = filtered.filter((p) => !isAbschluss(p) && !isAbsage(p));
     const nettoWon = won.reduce((s, p) => s + (p.nettowert || 0), 0);
     const abschluss = won.length + lost.length ? won.length / (won.length + lost.length) : 0;
     const offeneAngebote = filtered.filter((p) => p.stage === "offer" && !isAbschluss(p) && !isAbsage(p));
-    return { total: filtered.length, won: won.length, lost: lost.length, open: open.length, nettoWon, abschluss, offeneAngebote: offeneAngebote.length };
-  }, [filtered]);
+    return {
+      total: filtered.length, won: won.length, lost: lost.length, open: open.length,
+      nettoWon, abschluss, offeneAngebote: offeneAngebote.length,
+      wonList: won, lostList: lost, openList: open, offeneAngeboteList: offeneAngebote, totalList: filtered,
+    };
+  }, [filtered, groupFor]);
 
   const funnelData = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const g of FUNNEL_GROUPS) counts[g.key] = 0;
+    for (const g of funnelGroups) counts[g.key] = 0;
     for (const p of filtered) {
       if (p.stage !== "offer") continue;
       const g = groupFor(p.columnName);
-      if (counts[g] !== undefined) counts[g]++;
+      if (g) counts[g.key] = (counts[g.key] || 0) + 1;
     }
-    return FUNNEL_GROUPS.map((g) => ({ name: g.key, count: counts[g.key], color: g.color }));
-  }, [filtered]);
+    return funnelGroups.map((g) => ({ name: g.label, count: counts[g.key] || 0, color: g.color }));
+  }, [filtered, funnelGroups, groupFor]);
 
   const regionCount = useMemo(() => {
     const m: Record<string, number> = { Nord: 0, Mitte: 0, "Süd": 0, Unbekannt: 0 };
@@ -141,13 +158,13 @@ export default function Dashboard() {
     for (const p of filtered) {
       const k = p.vertriebler;
       if (!m[k]) m[k] = { name: k, abschluesse: 0, umsatz: 0, termine: 0 };
-      const isAbschluss = p.dealState === "Won" || p.stage === "installation" || groupFor(p.columnName) === "Auftrag";
-      if (isAbschluss) { m[k].abschluesse++; m[k].umsatz += p.nettowert || 0; }
       const grp = groupFor(p.columnName);
-      if (grp === "SC1" || grp === "SC2" || grp === "Vid") m[k].termine++;
+      const isAbschluss = p.dealState === "Won" || p.stage === "installation" || grp?.kind === "Auftrag";
+      if (isAbschluss) { m[k].abschluesse++; m[k].umsatz += p.nettowert || 0; }
+      if (grp?.kind === "Termin") m[k].termine++;
     }
     return Object.values(m).sort((a, b) => b.umsatz - a.umsatz);
-  }, [filtered]);
+  }, [filtered, groupFor]);
 
   // Alters-Staffel offene Angebote
   const offenAlter = useMemo(() => {
@@ -179,10 +196,20 @@ export default function Dashboard() {
       <header className="bg-white border-b border-neutral-200 px-6 py-4 sticky top-0 z-10">
         <div className="flex flex-wrap items-center gap-3 justify-between">
           <div>
-            <h1 className="text-xl font-bold text-neutral-900">HomeServe Vertriebs-Dashboard</h1>
+            <h1 className="text-xl font-bold text-neutral-900">{data.client.label} Vertriebs-Dashboard</h1>
             <p className="text-xs text-neutral-500">Reonic · {data.projects.length} Projekte · Stand {new Date(data.generatedAt).toLocaleString("de-DE")}</p>
           </div>
           <div className="flex items-center gap-2">
+            <select
+              value={client}
+              onChange={(e) => setClient(e.target.value)}
+              className="border border-neutral-300 rounded px-3 py-1.5 text-sm bg-white font-medium"
+              title="Kunde wechseln"
+            >
+              {data.clients.map((c) => (
+                <option key={c.slug} value={c.slug}>{c.label}</option>
+              ))}
+            </select>
             <div className="flex bg-neutral-100 rounded-lg p-1">
               {(["A", "B", "C"] as View[]).map((v) => (
                 <button key={v} onClick={() => setView(v)}
@@ -191,7 +218,7 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
-            <button onClick={load} className="p-2 text-neutral-600 hover:bg-neutral-100 rounded"><RefreshCw size={16} /></button>
+            <button onClick={() => load()} className="p-2 text-neutral-600 hover:bg-neutral-100 rounded"><RefreshCw size={16} /></button>
           </div>
         </div>
         <div className="flex flex-wrap gap-3 mt-3">
@@ -202,10 +229,11 @@ export default function Dashboard() {
       </header>
 
       <main className="p-6 space-y-6">
-        {view === "A" && <ViewA kpis={kpis} regionCount={regionCount} productCount={productCount} vertrieblerRank={vertrieblerRank} leadSources={leadSourceCount} />}
+        {view === "A" && <ViewA kpis={kpis} regionCount={regionCount} productCount={productCount} vertrieblerRank={vertrieblerRank} leadSources={leadSourceCount} onDrilldown={setDrilldown} />}
         {view === "B" && <ViewB filtered={filtered} funnelData={funnelData} offenAlter={offenAlter} vertrieblerRank={vertrieblerRank} />}
-        {view === "C" && <ViewC filtered={filtered} vertriebler={vertriebler} />}
+        {view === "C" && <ViewC filtered={filtered} vertriebler={vertriebler} groupFor={groupFor} />}
       </main>
+      {drilldown && <DrilldownModal title={drilldown.title} projects={drilldown.projects} onClose={() => setDrilldown(null)} />}
     </div>
   );
 }
@@ -221,12 +249,60 @@ function Select({ label, value, onChange, options }: { label: string; value: str
   );
 }
 
-function KPI({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub?: string }) {
+function KPI({ icon, label, value, sub, onClick }: { icon: React.ReactNode; label: string; value: string; sub?: string; onClick?: () => void }) {
+  const clickable = !!onClick;
   return (
-    <div className="bg-white rounded-xl border border-neutral-200 p-4 flex-1 min-w-[160px]">
+    <div
+      onClick={onClick}
+      className={`bg-white rounded-xl border border-neutral-200 p-4 flex-1 min-w-[160px] ${clickable ? "cursor-pointer hover:border-neutral-400 hover:shadow-sm transition" : ""}`}
+    >
       <div className="flex items-center gap-2 text-neutral-500 text-xs">{icon}<span>{label}</span></div>
       <div className="text-2xl font-bold text-neutral-900 mt-1">{value}</div>
       {sub && <div className="text-xs text-neutral-500 mt-1">{sub}</div>}
+    </div>
+  );
+}
+
+function DrilldownModal({ title, projects, onClose }: { title: string; projects: Project[]; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-5xl max-h-[85vh] flex flex-col shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-neutral-200">
+          <h3 className="text-lg font-semibold">{title} · {projects.length}</h3>
+          <button onClick={onClose} className="text-neutral-500 hover:text-neutral-900 text-2xl leading-none">×</button>
+        </div>
+        <div className="overflow-auto flex-1">
+          <table className="w-full text-sm">
+            <thead className="text-xs uppercase text-neutral-500 sticky top-0 bg-white border-b border-neutral-200">
+              <tr>
+                <th className="text-left p-3">Kunde</th>
+                <th className="text-left p-3">PLZ / Ort</th>
+                <th className="text-left p-3">Vertriebler</th>
+                <th className="text-left p-3">Status</th>
+                <th className="text-left p-3">Produkt</th>
+                <th className="text-right p-3">Netto</th>
+                <th className="text-left p-3">Aktualisiert</th>
+              </tr>
+            </thead>
+            <tbody>
+              {projects.length === 0 && (
+                <tr><td colSpan={7} className="p-6 text-center text-neutral-500">Keine Projekte</td></tr>
+              )}
+              {projects.map((p) => (
+                <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50">
+                  <td className="p-3 font-medium">{p.customer || p.name}</td>
+                  <td className="p-3 text-neutral-600">{[p.plz, p.city].filter(Boolean).join(" ")}</td>
+                  <td className="p-3">{p.vertriebler}</td>
+                  <td className="p-3 text-neutral-600">{p.columnName}</td>
+                  <td className="p-3">{p.product}</td>
+                  <td className="p-3 text-right">{p.nettowert ? fmtEUR(p.nettowert) : "–"}</td>
+                  <td className="p-3 text-neutral-500 text-xs">{p.updatedAt ? new Date(p.updatedAt).toLocaleDateString("de-DE") : "–"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -240,14 +316,14 @@ function Card({ title, children, className = "" }: { title: string; children: Re
   );
 }
 
-function ViewA({ kpis, regionCount, productCount, vertrieblerRank, leadSources }: any) {
+function ViewA({ kpis, regionCount, productCount, vertrieblerRank, leadSources, onDrilldown }: any) {
   return (
     <>
       <div className="flex flex-wrap gap-3">
-        <KPI icon={<Euro size={14} />} label="Netto verkauft" value={fmtEUR(kpis.nettoWon)} sub={`${kpis.won} Abschlüsse`} />
-        <KPI icon={<CheckCircle2 size={14} />} label="Abschlussquote" value={`${(kpis.abschluss * 100).toFixed(0)}%`} sub={`${kpis.won} von ${kpis.won + kpis.lost}`} />
-        <KPI icon={<Target size={14} />} label="Offene Angebote" value={String(kpis.offeneAngebote)} />
-        <KPI icon={<Users size={14} />} label="Gesamt-Projekte" value={String(kpis.total)} sub={`${kpis.open} offen`} />
+        <KPI icon={<Euro size={14} />} label="Netto verkauft" value={fmtEUR(kpis.nettoWon)} sub={`${kpis.won} Abschlüsse`} onClick={() => onDrilldown({ title: "Abschlüsse", projects: kpis.wonList })} />
+        <KPI icon={<CheckCircle2 size={14} />} label="Abschlussquote" value={`${(kpis.abschluss * 100).toFixed(0)}%`} sub={`${kpis.won} von ${kpis.won + kpis.lost}`} onClick={() => onDrilldown({ title: "Absagen", projects: kpis.lostList })} />
+        <KPI icon={<Target size={14} />} label="Offene Angebote" value={String(kpis.offeneAngebote)} onClick={() => onDrilldown({ title: "Offene Angebote", projects: kpis.offeneAngeboteList })} />
+        <KPI icon={<Users size={14} />} label="Gesamt-Projekte" value={String(kpis.total)} sub={`${kpis.open} offen`} onClick={() => onDrilldown({ title: "Alle Projekte", projects: kpis.totalList })} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -386,12 +462,12 @@ function ViewB({ filtered, funnelData, offenAlter, vertrieblerRank }: any) {
   );
 }
 
-function ViewC({ filtered, vertriebler }: { filtered: Project[]; vertriebler: string }) {
+function ViewC({ filtered, vertriebler, groupFor }: { filtered: Project[]; vertriebler: string; groupFor: (col: string) => FunnelGroup | undefined }) {
   const heute = Date.now();
   const offen = filtered.filter((p) => p.stage === "offer" && p.dealState !== "Won" && p.dealState !== "Lost");
   const alt = offen.filter((p) => p.offerCreatedAt && (heute - new Date(p.offerCreatedAt).getTime()) / 86400000 > 14);
   const monatWon = filtered.filter((p) => p.dealState === "Won" && p.dealDecidedAt && new Date(p.dealDecidedAt).getMonth() === new Date().getMonth());
-  const monatSC2 = filtered.filter((p) => groupFor(p.columnName) === "SC2");
+  const monatSC2 = filtered.filter((p) => groupFor(p.columnName)?.kind === "Termin");
   const sc2Quote = filtered.length ? monatSC2.length / filtered.filter((p) => p.stage === "offer").length : 0;
   return (
     <>

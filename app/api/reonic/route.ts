@@ -1,18 +1,20 @@
 import { NextResponse } from "next/server";
+import { CLIENTS, findClient, keyFor } from "@/lib/clients";
 
-const KEY = process.env.REONIC_API_KEY!;
 const BASE = "https://api.reonic.de/rest/v3";
 
-async function rfetch(path: string) {
-  const r = await fetch(BASE + path, {
-    headers: { "X-Authorization": KEY, "Reonic-Cache-Control": "no-cache" },
-    next: { revalidate: 300 },
-  });
-  if (!r.ok) throw new Error(`Reonic ${r.status} on ${path}`);
-  return r.json();
+function makeFetcher(key: string) {
+  return async function rfetch(path: string) {
+    const r = await fetch(BASE + path, {
+      headers: { "X-Authorization": key, "Reonic-Cache-Control": "no-cache" },
+      next: { revalidate: 300 },
+    });
+    if (!r.ok) throw new Error(`Reonic ${r.status} on ${path}`);
+    return r.json();
+  };
 }
 
-async function listAll(base: string) {
+async function listAll(rfetch: (p: string) => Promise<any>, base: string) {
   const all: any[] = [];
   let page = 1;
   while (true) {
@@ -55,14 +57,19 @@ const COLUMN_STAGE: Record<string, string> = {
 };
 const STAGE_ORDER = ["Terminiert SC1", "Terminiert Vid", "Angebotserstellung", "Rücksprache mit Projektleiter", "Angebotsbesprechung SC2 beim Kunden", "Angebotsbesprechung SC2  im Haus", "Nachfassen", "Auftrag versendet", "Beauftragt", "AB verschickt", "BzA verschickt", "Absage"];
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const [projects, boards, users, leadSources, tags] = await Promise.all([
-      listAll("/residentialProjects"),
+    const url = new URL(req.url);
+    const client = findClient(url.searchParams.get("client"));
+    const rfetch = makeFetcher(keyFor(client));
+
+    const [projects, boards, users, leadSources, tags, tasks] = await Promise.all([
+      listAll(rfetch, "/residentialProjects"),
       rfetch("/kanbanBoards").then((d) => d.data),
       rfetch("/users").then((d) => d.data),
       rfetch("/leadSources").then((d) => d.data),
       rfetch("/tags").then((d) => d.data),
+      listAll(rfetch, "/tasks").catch(() => []),
     ]);
 
     // Column-ID → Name map
@@ -107,11 +114,27 @@ export async function GET() {
       customer: p.customerContact?.fullName || p.name,
     }));
 
+    // Tasks pro User + offen/erledigt
+    const tasksByUser: Record<string, { total: number; open: number; done: number }> = {};
+    for (const t of tasks as any[]) {
+      const uid = t.createdById || t.parent?.id;
+      if (!uid) continue;
+      if (!tasksByUser[uid]) tasksByUser[uid] = { total: 0, open: 0, done: 0 };
+      tasksByUser[uid].total++;
+      if (t.completedAt) tasksByUser[uid].done++;
+      else tasksByUser[uid].open++;
+    }
+
     return NextResponse.json({
+      client: { slug: client.slug, label: client.label },
+      clients: CLIENTS.map((c) => ({ slug: c.slug, label: c.label })),
+      funnelGroups: client.funnelGroups,
       projects: enriched,
       users: users.map((u: any) => ({ id: u.id, name: u.fullName, email: u.email })),
       leadSources: leadSources.map((l: any) => l.name),
       boards: boards.map((b: any) => ({ id: b.id, name: b.name, stage: b.projectStage, domain: b.projectDomain, columns: (b.columns || []).map((c: any) => ({ id: c.id, name: c.name, archived: !!c.archivedAt })) })),
+      tasksByUser,
+      tasksTotal: (tasks as any[]).length,
       generatedAt: new Date().toISOString(),
     });
   } catch (e: any) {
