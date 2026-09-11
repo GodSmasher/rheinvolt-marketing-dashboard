@@ -264,12 +264,61 @@ function KPI({ icon, label, value, sub, onClick }: { icon: React.ReactNode; labe
 }
 
 function DrilldownModal({ title, projects, onClose }: { title: string; projects: Project[]; onClose: () => void }) {
+  const [search, setSearch] = useState("");
+  const [vertrieblerFilter, setVertrieblerFilter] = useState("alle");
+  const [productFilter, setProductFilter] = useState("alle");
+  const [sortBy, setSortBy] = useState<"updated" | "netto" | "name">("updated");
+
+  const vertrieblerOptions = useMemo(() => Array.from(new Set(projects.map(p => p.vertriebler).filter(Boolean))).sort(), [projects]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let list = projects.filter(p => {
+      if (vertrieblerFilter !== "alle" && p.vertriebler !== vertrieblerFilter) return false;
+      if (productFilter !== "alle" && p.product !== productFilter) return false;
+      if (q) {
+        const hay = [p.customer, p.name, p.plz, p.city, p.vertriebler, p.columnName].filter(Boolean).join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+    if (sortBy === "netto") list = [...list].sort((a, b) => (b.nettowert || 0) - (a.nettowert || 0));
+    else if (sortBy === "name") list = [...list].sort((a, b) => (a.customer || a.name || "").localeCompare(b.customer || b.name || ""));
+    else list = [...list].sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+    return list;
+  }, [projects, search, vertrieblerFilter, productFilter, sortBy]);
+
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-xl w-full max-w-6xl max-h-[92vh] flex flex-col shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-2 border-b border-neutral-200">
-          <h3 className="text-base font-semibold">{title} · {projects.length}</h3>
+          <h3 className="text-base font-semibold">{title} · {filtered.length}{filtered.length !== projects.length && <span className="text-neutral-400 font-normal"> von {projects.length}</span>}</h3>
           <button onClick={onClose} className="text-neutral-500 hover:text-neutral-900 text-2xl leading-none">×</button>
+        </div>
+        <div className="flex flex-wrap gap-2 px-4 py-2 border-b border-neutral-100 bg-neutral-50">
+          <input
+            autoFocus
+            type="text"
+            placeholder="Suche Kunde / PLZ / Ort …"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="flex-1 min-w-[200px] px-2 py-1 text-sm border border-neutral-300 rounded"
+          />
+          <select value={vertrieblerFilter} onChange={e => setVertrieblerFilter(e.target.value)} className="px-2 py-1 text-sm border border-neutral-300 rounded bg-white">
+            <option value="alle">Alle Vertriebler</option>
+            {vertrieblerOptions.map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+          <select value={productFilter} onChange={e => setProductFilter(e.target.value)} className="px-2 py-1 text-sm border border-neutral-300 rounded bg-white">
+            <option value="alle">Alle Produkte</option>
+            <option value="WP">WP</option>
+            <option value="PV">PV</option>
+            <option value="Sonstige">Sonstige</option>
+          </select>
+          <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="px-2 py-1 text-sm border border-neutral-300 rounded bg-white">
+            <option value="updated">Neueste zuerst</option>
+            <option value="netto">Netto absteigend</option>
+            <option value="name">Name A-Z</option>
+          </select>
         </div>
         <div className="overflow-auto flex-1">
           <table className="w-full text-xs">
@@ -285,10 +334,10 @@ function DrilldownModal({ title, projects, onClose }: { title: string; projects:
               </tr>
             </thead>
             <tbody>
-              {projects.length === 0 && (
-                <tr><td colSpan={7} className="p-6 text-center text-neutral-500">Keine Projekte</td></tr>
+              {filtered.length === 0 && (
+                <tr><td colSpan={7} className="p-6 text-center text-neutral-500">Keine Treffer</td></tr>
               )}
-              {projects.map((p) => (
+              {filtered.map((p) => (
                 <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                   <td className="px-2 py-1 font-medium">{p.customer || p.name}</td>
                   <td className="px-2 py-1 text-neutral-600">{[p.plz, p.city].filter(Boolean).join(" ")}</td>
