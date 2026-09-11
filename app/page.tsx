@@ -266,22 +266,22 @@ function KPI({ icon, label, value, sub, onClick }: { icon: React.ReactNode; labe
 function DrilldownModal({ title, projects, onClose }: { title: string; projects: Project[]; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl w-full max-w-5xl max-h-[85vh] flex flex-col shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b border-neutral-200">
-          <h3 className="text-lg font-semibold">{title} · {projects.length}</h3>
+      <div className="bg-white rounded-xl w-full max-w-6xl max-h-[92vh] flex flex-col shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-2 border-b border-neutral-200">
+          <h3 className="text-base font-semibold">{title} · {projects.length}</h3>
           <button onClick={onClose} className="text-neutral-500 hover:text-neutral-900 text-2xl leading-none">×</button>
         </div>
         <div className="overflow-auto flex-1">
-          <table className="w-full text-sm">
-            <thead className="text-xs uppercase text-neutral-500 sticky top-0 bg-white border-b border-neutral-200">
+          <table className="w-full text-xs">
+            <thead className="text-[10px] uppercase text-neutral-500 sticky top-0 bg-white border-b border-neutral-200">
               <tr>
-                <th className="text-left p-3">Kunde</th>
-                <th className="text-left p-3">PLZ / Ort</th>
-                <th className="text-left p-3">Vertriebler</th>
-                <th className="text-left p-3">Status</th>
-                <th className="text-left p-3">Produkt</th>
-                <th className="text-right p-3">Netto</th>
-                <th className="text-left p-3">Aktualisiert</th>
+                <th className="text-left px-2 py-1.5">Kunde</th>
+                <th className="text-left px-2 py-1.5">PLZ / Ort</th>
+                <th className="text-left px-2 py-1.5">Vertriebler</th>
+                <th className="text-left px-2 py-1.5">Status</th>
+                <th className="text-left px-2 py-1.5">Produkt</th>
+                <th className="text-right px-2 py-1.5">Netto</th>
+                <th className="text-left px-2 py-1.5">Aktualisiert</th>
               </tr>
             </thead>
             <tbody>
@@ -290,13 +290,13 @@ function DrilldownModal({ title, projects, onClose }: { title: string; projects:
               )}
               {projects.map((p) => (
                 <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50">
-                  <td className="p-3 font-medium">{p.customer || p.name}</td>
-                  <td className="p-3 text-neutral-600">{[p.plz, p.city].filter(Boolean).join(" ")}</td>
-                  <td className="p-3">{p.vertriebler}</td>
-                  <td className="p-3 text-neutral-600">{p.columnName}</td>
-                  <td className="p-3">{p.product}</td>
-                  <td className="p-3 text-right">{p.nettowert ? fmtEUR(p.nettowert) : "–"}</td>
-                  <td className="p-3 text-neutral-500 text-xs">{p.updatedAt ? new Date(p.updatedAt).toLocaleDateString("de-DE") : "–"}</td>
+                  <td className="px-2 py-1 font-medium">{p.customer || p.name}</td>
+                  <td className="px-2 py-1 text-neutral-600">{[p.plz, p.city].filter(Boolean).join(" ")}</td>
+                  <td className="px-2 py-1">{p.vertriebler}</td>
+                  <td className="px-2 py-1 text-neutral-600">{p.columnName}</td>
+                  <td className="px-2 py-1">{p.product}</td>
+                  <td className="px-2 py-1 text-right">{p.nettowert ? fmtEUR(p.nettowert) : "–"}</td>
+                  <td className="px-2 py-1 text-neutral-500">{p.updatedAt ? new Date(p.updatedAt).toLocaleDateString("de-DE") : "–"}</td>
                 </tr>
               ))}
             </tbody>
