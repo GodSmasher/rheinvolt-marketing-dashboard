@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   const from = req.nextUrl.searchParams.get("from");
   const to = req.nextUrl.searchParams.get("to");
   const viewParam = req.nextUrl.searchParams.get("view");
-  const VALID_VIEWS: ViewFilter[] = ["gesamt", "google", "organisch", "deal"];
+  const VALID_VIEWS: ViewFilter[] = ["gesamt", "google", "meta", "organisch"];
   const view: ViewFilter = VALID_VIEWS.includes(viewParam as ViewFilter)
     ? (viewParam as ViewFilter)
     : "gesamt";

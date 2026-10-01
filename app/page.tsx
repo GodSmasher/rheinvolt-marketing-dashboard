@@ -41,13 +41,13 @@ type DateRange =
   | "ytd"
   | "custom";
 
-type ViewFilter = "gesamt" | "google" | "organisch" | "deal";
+type ViewFilter = "gesamt" | "google" | "meta" | "organisch";
 
 const viewLabels: Record<ViewFilter, string> = {
   gesamt: "Gesamt",
   google: "Google",
+  meta: "META",
   organisch: "Organisch",
-  deal: "Deal (Meta)",
 };
 
 const rangeLabels: Record<DateRange, string> = {
@@ -913,25 +913,34 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {topAds.map((a, i) => (
-                    <tr key={`${a.adSet}-${a.adName}-${i}`} className="border-b border-zinc-100 hover:bg-[#f5f5f5]">
-                      <td className="py-2.5 pr-3 max-w-[20rem]">
-                        <span className="font-semibold text-zinc-900 block truncate" title={a.adName}>
-                          {a.adName}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 max-w-[20rem]">
-                        <span className="block truncate text-zinc-700" title={a.adSet}>
-                          {a.adSet}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-zinc-900">{a.leads}</td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-zinc-900">{a.sales}</td>
-                      <td className="py-2.5 pl-3 text-right tabular-nums font-medium text-zinc-900">
-                        {formatEur(a.umsatz)}
-                      </td>
-                    </tr>
-                  ))}
+                  {topAds.map((a, i) => {
+                    const hasAdName = a.adName !== "(ohne Ad-Name)";
+                    return (
+                      <tr key={`${a.adSet}-${a.adName}-${i}`} className="border-b border-zinc-100 hover:bg-[#f5f5f5]">
+                        <td className="py-2.5 pr-3 max-w-[24rem]">
+                          {hasAdName ? (
+                            <span className="font-semibold text-zinc-900 block truncate" title={a.adName}>
+                              {a.adName}
+                            </span>
+                          ) : (
+                            <span className="text-zinc-400 italic block truncate">
+                              kein Ad-Name hinterlegt
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 max-w-[24rem]">
+                          <span className="block truncate text-zinc-900" title={a.adSet}>
+                            {a.adSet}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right tabular-nums text-zinc-900">{a.leads}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums text-zinc-900">{a.sales}</td>
+                        <td className="py-2.5 pl-3 text-right tabular-nums font-medium text-zinc-900">
+                          {formatEur(a.umsatz)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

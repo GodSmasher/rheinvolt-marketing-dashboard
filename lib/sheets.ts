@@ -397,21 +397,19 @@ function aggregateBasics(leads: Lead[], start: Date, end: Date) {
   return { inRange, sales, total, umsatz };
 }
 
-export type ViewFilter = "gesamt" | "google" | "organisch" | "deal";
+export type ViewFilter = "gesamt" | "google" | "meta" | "organisch";
 
 function applyViewFilter(leads: Lead[], view: ViewFilter): Lead[] {
   switch (view) {
     case "google":
       return leads.filter((l) => l.quelle === "google");
+    case "meta":
+      return leads.filter(
+        (l) => l.quelle === "facebook" || l.quelle === "ig" || l.quelle === "meta" || l.quelle === "instagram"
+      );
     case "organisch":
       return leads.filter(
         (l) => l.quelle === "website" || l.quelle === "organic" || l.quelle === "organisch"
-      );
-    case "deal":
-      return leads.filter(
-        (l) =>
-          (l.quelle === "facebook" || l.quelle === "ig" || l.quelle === "meta" || l.quelle === "instagram") &&
-          l.kampagne.toLowerCase().includes("deal")
       );
     case "gesamt":
     default:
@@ -510,12 +508,12 @@ export function computeStats(
   // Ad (Werbeanzeige) breakdown
   const adMap = new Map<string, { adName: string; adSet: string; leads: number; sales: number; umsatz: number }>();
   for (const l of inRange) {
-    if (!l.adName && !l.adSet) continue;
-    const effectiveAdName = l.adName || "(ohne Anzeigenname)";
-    const key = `${l.adSet}||${effectiveAdName}`;
+    const effectiveAdName = l.adName || "(ohne Ad-Name)";
+    const effectiveAdSet = l.adSet || "—";
+    const key = `${effectiveAdSet}||${effectiveAdName}`;
     const cur = adMap.get(key) || {
       adName: effectiveAdName,
-      adSet: l.adSet || "—",
+      adSet: effectiveAdSet,
       leads: 0,
       sales: 0,
       umsatz: 0,
